@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"github.com/devfacet/gocmd"
@@ -39,6 +40,17 @@ func getRecentSnapshots(ip string, snapshots chan []RecentSnapshot) {
 	json.Unmarshal(responseData, &recentSnapshots)
 
 	snapshots <- recentSnapshots
+}
+
+func getBalance(ip string, address string, balances chan string) {
+	response, err := http.Post("http://" + ip + ":9000/balance", "application/json", bytes.NewBuffer([]byte(address)))
+	check(err)
+
+	responseData, err := ioutil.ReadAll(response.Body)
+	check(err)
+	s := string(responseData)
+
+	balances <- s
 }
 
 func getHosts() []string {
@@ -90,7 +102,9 @@ func main() {
 		Version        bool     `short:"v" long:"version" description:"Display version"`
 		VersionEx      bool     `long:"vv" description:"Display version (extended)"`
 		CheckAlignment struct{} `command:"check-alignment" description:"Checks alignment on the cluster"`
-		CheckBalance   struct{} `command:"check-balance" description:"Checks address balance on the cluster"`
+		CheckBalance   struct{
+			Address string `short:"a" long:"address" required:"true" description:"Wallet address"`
+		} `command:"check-balance" description:"Checks address balance on the cluster"`
 	}{}
 
 	gocmd.HandleFlag("CheckAlignment", func(cmd *gocmd.Cmd, args []string) error {
@@ -143,6 +157,38 @@ func main() {
 	})
 
 	gocmd.HandleFlag("CheckBalance", func(cmd *gocmd.Cmd, args []string) error {
+		address := flags.CheckBalance.Address
+		ips := getHosts()
+		fmt.Println("Checking balance for address:", address ,"on nodes:", len(ips))
+
+		balanceChan := make(chan string, len(ips))
+		defer close(balanceChan)
+
+		for _, ip := range ips {
+			go getBalance(ip, address, balanceChan)
+		}
+
+		balances := make([]string, 0)
+		for range ips {
+			balances = append(balances, <- balanceChan)
+		}
+
+		same := true
+		misaligned := 0
+		b := balances[0]
+		for _, balance := range balances {
+			if (balance != b) {
+				same = false
+				misaligned++
+			}
+		}
+
+		if !same {
+			log.Fatal("Different balance across nodes (", misaligned, "): ", b)
+		} else {
+			fmt.Println("Same balance across nodes:", b)
+		}
+
 		return nil
 	})
 
