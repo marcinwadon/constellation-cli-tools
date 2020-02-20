@@ -20,8 +20,8 @@ func check(e error) {
 }
 
 type RecentSnapshot struct {
-	Hash   string `json:"hash"`
-	Height int    `json:"height"`
+	Hash   string
+	Height int
 }
 
 type RecentSnapshotAlignment struct {
@@ -31,13 +31,19 @@ type RecentSnapshotAlignment struct {
 }
 
 func getRecentSnapshots(ip string, snapshots chan []RecentSnapshot) {
-	response, err := http.Get("http://" + ip + ":9000/snapshot/recent")
+	response, err := http.Get("http://" + ip + ":9000/snapshot/accepted")
 	check(err)
 
 	responseData, err := ioutil.ReadAll(response.Body)
 	check(err)
+	acceptedSnapshots := map[int]string{}
+	json.Unmarshal(responseData, &acceptedSnapshots)
+
 	recentSnapshots := make([]RecentSnapshot, 0)
-	json.Unmarshal(responseData, &recentSnapshots)
+
+	for key, value := range acceptedSnapshots {
+		recentSnapshots = append(recentSnapshots, RecentSnapshot{Height:key,Hash:value})
+	}
 
 	snapshots <- recentSnapshots
 }
@@ -194,7 +200,7 @@ func main() {
 
 	gocmd.New(gocmd.Options{
 		Name:        "cl-tools",
-		Version:     "0.0.1",
+		Version:     "0.0.2",
 		Description: "Constellation command line tools",
 		Flags:       &flags,
 		ConfigType:  gocmd.ConfigTypeAuto,
